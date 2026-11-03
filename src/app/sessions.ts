@@ -60,23 +60,31 @@ declare module '@deepseek-ai/cordis' {
  */
 const WORK_TOOLS = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'bash', 'pwsh', 'job_output', 'job_list', 'job_kill', 'web_search',
   'web_fetch', 'skill', 'todo_write', 'subagent', 'list_subagent_models', 'send_message', 'list_agents', 'interrupt_agent']
+/** The shell tool names DSH registers; a platform has one of them, the bundle's presets disable the other. */
+const SHELL_TOOLS = ['bash', 'pwsh']
+/**
+ * The DSH tools the main Session works with: skills, the shell and its jobs, and reading files and images. Both shell names
+ * are listed because the platform decides which one a profile registers, and `tools.restrict()` refuses to name a tool the
+ * profile does not have; `visible` keeps the unregistered one out, as it does for the worker's tools.
+ */
+const ROUTER_TOOLS = ['skill', ...SHELL_TOOLS, 'read', 'read_image', 'job_output', 'job_list', 'job_kill']
 /** What the main Session is told when it would wait: what it waits for comes to it, and a waiting step holds back the next. */
 const NO_WAIT = 'Reports, follow_up notices, new candidates and a background job\'s end with its output arrive by themselves as messages; '
   + 'end the turn instead of waiting for them.'
 /** What a main Session under `standard` is told when its command would wait the shell's default. */
 const DEFAULT_WAIT = 'This shell waits up to 60 seconds by default: pass timeoutMs of at most 30000, or run_in_background, '
   + 'as a waiting step holds back new candidates.'
-/** `sleep` at a command position: the start, after ; & | ( { ! ` or a newline, or after a keyword or a command that runs it. */
+/** `sleep` at a command position: the start, after ; & | ( { ! ` or a newline, or after a keyword or a command that runs it. PowerShell aliases `sleep` to `Start-Sleep`, so one pattern covers both shells. */
 const SLEEP = /(?:^|[;&|({!`\n]|\b(?:do|then|else|elif|if|while|until|time|exec|nohup|command|env)\s)\s*(?:\S*\/)?sleep\b/
 /**
- * The main Session's guard: it refuses a bash command that runs sleep or asks to hold the step longer than 30 seconds, and a
+ * The main Session's guard: it refuses a shell command that runs sleep or asks to hold the step longer than 30 seconds, and a
  * job wait longer than 5 seconds. Under `standard`, as a main Session created before the router preset runs, the shell holds
  * a command 60 seconds and a job wait lasts 30 seconds by default, so a command needs a timeout or the background, and a
  * job wait its timeout; the router preset ends both after 5 seconds.
  */
 function noWait({ name, arguments: input }: { name: string; arguments: unknown }, routed: () => boolean): string | undefined {
   const args = (input ?? {}) as { command?: unknown; timeoutMs?: unknown; run_in_background?: unknown; wait?: unknown; timeout_ms?: unknown }
-  if (name === 'bash') {
+  if (SHELL_TOOLS.includes(name)) {
     const sleeps = typeof args.command === 'string' && SLEEP.test(args.command)
     if (sleeps || typeof args.timeoutMs === 'number' && args.timeoutMs > 30_000) return NO_WAIT
     if (args.timeoutMs === undefined && args.run_in_background !== true && !routed()) return DEFAULT_WAIT
@@ -260,7 +268,7 @@ export class Sessions {
     const register = this.registerTool(agent, binding)
     for (const tool of host.tools(agent, ticket)) register(tool.name, tool.description, tool.schema, tool.execute)
     if (master) {
-      binding.disposers.push(agent.ctx.tools.restrict({ allow: ['skill', 'bash', 'read', 'read_image', 'job_output', 'job_list', 'job_kill'] }),
+      binding.disposers.push(agent.ctx.tools.restrict({ allow: this.visible(agent, ROUTER_TOOLS) }),
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
       // An Executor Session keeps the profile's work tools it has, which DSH requires to be known; its own tools are not masked.
@@ -281,15 +289,22 @@ export class Sessions {
     } catch { return false }
   }
   /**
-   * An Executor Session's tools: only the profile's work tools, which DSH requires to be known, and none once its ticket
-   * ended. A failed or blocked worker keeps its tools, so a person may continue it in its Session; only automated input waits
-   * (see the executor). Read inherited tools through the parent scope, which includes the preset's tools. The global view
-   * misses preset tools; the agent's own view also includes local tools such as subagent, which restrict refuses to name.
+   * The listed tools this Session can actually be restricted to: `tools.restrict()` refuses a name the profile never
+   * registers, and a platform registers only one shell name. Read inherited tools through the parent scope, which includes
+   * the preset's tools; the global view misses preset tools, and the agent's own view also includes local tools such as
+   * subagent, which `restrict` refuses to name.
+   */
+  private visible(agent: Agent, names: readonly string[]): string[] {
+    const parent = scopeParentOf(agent)
+    return names.filter(name => agent.ctx.tools.get(name, parent))
+  }
+  /**
+   * An Executor Session's tools: only the profile's work tools, and none once its ticket ended. A failed or blocked worker
+   * keeps its tools, so a person may continue it in its Session; only automated input waits (see the executor).
    */
   private workOnly(agent: Agent, ticketId: string): (() => void)[] {
     const store = this.host.store
-    const parent = scopeParentOf(agent)
-    const allow = WORK_TOOLS.filter(name => agent.ctx.tools.get(name, parent))
+    const allow = this.visible(agent, WORK_TOOLS)
     return [agent.ctx.tools.restrict({ allow }), agent.ctx.tools.guard(() => {
       const current = store.tickets.get(ticketId)
       return !current || !liveTicket(current) ? 'Ticket ended; new work needs a new authorized ticket' : undefined
