@@ -147,10 +147,12 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
 interface Round {
   started: string; signal?: AbortSignal | undefined
   pulls: Map<number, Promise<Pull>>; read: Set<number>; failures: string[]; dropped: number[]; abandoned: number[]
+  /** Events skipped because the agent's own account wrote them; a single-account deployment is all own events. */
+  own: number
   tally: Tally
 }
 const newRound = (signal?: AbortSignal): Round => ({ started: new Date().toISOString(), signal, pulls: new Map(), read: new Set(),
-  failures: [], dropped: [], abandoned: [], tally: { skipped: 0 } })
+  failures: [], dropped: [], abandoned: [], own: 0, tally: { skipped: 0 } })
 const stopped = (ctx: SourceContext, round: Round): boolean => !!round.signal?.aborted || !ctx.config(SOURCE)
 export interface Retry { since: string; pr: boolean; failedAt?: string; attempts?: number }
 const RETRY_WINDOW_MS = 24 * 3600_000
@@ -224,17 +226,18 @@ async function readStream(ctx: SourceContext, round: Round, id: string, path: st
   for (const item of items) {
     // Stopping mid-stream aborts before advancing the cursor so unread items are retried.
     if (stopped(ctx, round)) throw new Error('The GitHub Source stopped during the poll')
-    if (sameName(item.user.login, login)) continue
     if (id === 'issues') {
       const issue = IssueSchema.safeParse(item)
       const pr = issue.success && !!issue.data.pull_request
       if (!issue.success || !fresh(issue.data.created_at, pr ? 'pulls' : 'issues')) continue
+      if (sameName(item.user.login, login)) { round.own++; continue }
       await ctx.receive(pr ? pullTrigger(issue.data, login) : issueTrigger(issue.data, login))
       nameThread(ctx, issue.data.number, issue.data.title)
       continue
     }
     const number = Number(/\/(?:issues|pulls)\/(\d+)$/.exec((id === 'comments' ? item.issue_url : item.pull_request_url) ?? '')?.[1])
     if (!number || !fresh(item.updated_at ?? item.created_at, 'comments')) continue
+    if (sameName(item.user.login, login)) { round.own++; continue }
     const isPr = id === 'review-comments' || /\/pull\//.test(item.html_url ?? '')
     const ref = { number, isPr, ...item.html_url ? { url: item.html_url } : {} }
     const trigger = commentTrigger(item, ref, id === 'comments' ? 'conversation' : 'inline', login)
@@ -291,6 +294,7 @@ export async function pollRound(ctx: SourceContext, signal?: AbortSignal): Promi
   const dropped = (round.dropped.length ? `; deleted on GitHub: ${named(round.dropped)}` : '')
     + (round.abandoned.length ? `; dropped after their reads kept failing: ${named(round.abandoned)}` : '')
     + (round.tally.skipped ? `; ${round.tally.skipped} unreadable items skipped` : '')
+    + (round.own ? `; ${round.own} from @${ctx.deployment.github.login} (the agent's own account) ignored` : '')
   ctx.report('github', { state: 'ready', detail: `${count} notifications; next poll ≥ ${interval}s${dropped}`, at: round.started })
   return interval
 }
@@ -352,8 +356,8 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
       // An Issue opened by someone other than the agent since the cursor brings its body so a mention in it reaches the gate.
       // A mention added by a later edit to the body is not read: only the author can be the actor of the body.
       const { login } = ctx.deployment.github
-      const opened = Date.parse(issue.created_at) >= Date.parse(since) && !sameName(issue.user.login, login)
-      if (opened) await ctx.receive(issueTrigger(issue, login))
+      const opened = Date.parse(issue.created_at) >= Date.parse(since)
+      if (opened) { if (sameName(issue.user.login, login)) round.own++; else await ctx.receive(issueTrigger(issue, login)) }
       await intakeComments(ctx, { number, isPr: false, url: issue.html_url }, since, round)
       nameThread(ctx, number, issue.title)
     }
@@ -362,9 +366,12 @@ async function readNotified(ctx: SourceContext, round: Round, number: number, it
     const pr = await pull(ctx, round, number)
     // Emit a PR description trigger for PRs opened since the cursor; its ID is the same as the one produced by the repository PR stream.
     const { login } = ctx.deployment.github
-    if (pr.created_at && Date.parse(pr.created_at) >= Date.parse(since) && !sameName(pr.user.login, login)) {
-      const opened = { number, title: pr.title ?? '', body: pr.body, user: pr.user, created_at: pr.created_at, html_url: pr.html_url }
-      await ctx.receive(pullTrigger(opened, login))
+    if (pr.created_at && Date.parse(pr.created_at) >= Date.parse(since)) {
+      if (sameName(pr.user.login, login)) round.own++
+      else {
+        const opened = { number, title: pr.title ?? '', body: pr.body, user: pr.user, created_at: pr.created_at, html_url: pr.html_url }
+        await ctx.receive(pullTrigger(opened, login))
+      }
     }
     await intakeComments(ctx, { number, isPr: true, url: pr.html_url, prAuthor: pr.user.login }, since, round)
     if (pr.title) nameThread(ctx, number, pr.title)
@@ -394,7 +401,7 @@ async function intakeComments(ctx: SourceContext, ref: PullRef, since: string, r
       if (stopped(ctx, round)) throw new Error('The GitHub Source stopped during the poll')
       const timestamp = Date.parse(comment.updated_at ?? comment.submitted_at ?? comment.created_at ?? '')
       if (!Number.isFinite(timestamp) || timestamp < Date.parse(since)) continue
-      if (sameName(comment.user.login, login)) continue
+      if (sameName(comment.user.login, login)) { round.own++; continue }
       // A review decision without a body still reaches the ticket: a worker may be waiting for that approval.
       const trigger = commentTrigger(comment, ref, kind, login)
       if (trigger.text) await ctx.receive(trigger)

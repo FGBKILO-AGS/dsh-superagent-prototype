@@ -5,7 +5,7 @@ Use this guide to install, configure and operate dsh-superagent. It covers accou
 ## What runs
 
 - **A dedicated DeepSeek Harness profile**, called `superagent` in this guide. Create it from the Web profile template. It loads the bundle and serves its panel on `127.0.0.1`. Keep it separate from the profile you work in: the plugin changes process-wide `PATH` and git settings, and its process needs independent restarts and upgrades.
-- **An agent GitHub account.** The agent comments, pushes branches and opens pull requests as this account, through a GitHub CLI signed in only as that account.
+- **An agent GitHub account.** The agent comments, pushes branches and opens pull requests as this account, through a GitHub CLI signed in only as that account. Keep it separate from the account people write from: the GitHub Source ignores events this account posted, so with one account for both, every request is the agent's own writing and nothing reaches it. The GitHub card's health names how many items it skipped that way.
 - **Optional:** a Feishu bot for chat requests.
 
 Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repository and accounts, Policy for allowed lists, and Execution for worker directories and commands.
@@ -255,6 +255,7 @@ Setup problems appear on the overview with a link to the fix, in the panel's lan
 | `The agent GitHub CLI was not found.` | Set the wrapper's absolute path, or a command name on `PATH` |
 | `The agent GitHub CLI cannot read its account` | Sign the wrapper in with `auth login` |
 | `@… cannot read …` or `@… cannot push to …` | Give the agent account write access to the repository |
+| New Issues and comments reach nothing, and the GitHub card says `… from @… (the agent's own account) ignored` | One account is both the person and the agent, and the Source skips the agent's own events; give the agent its own GitHub account and sign the operator in separately |
 | `The GitHub Source names no repository.` | Set the repository, `owner/name`, on the GitHub card |
 | A Ticket fails with `The prepare command failed: …` | The output names the cause, such as a wrong clone path; fix the command, then retry the Ticket |
 | `git does not read the github.com credential configuration dsh-superagent writes` | Install git 2.32 or later |

@@ -1266,6 +1266,26 @@ describe('observing the GitHub repository', () => {
       .toEqual([[7, false, 'conversation', true], [9, true, 'conversation', false], [9, true, 'inline', true]])
     h.store.close()
   })
+  it('names the items it skipped because the agent\'s own account wrote them, so a single-account deployment shows', async () => {
+    const h = host()
+    observe(h, { observeIssues: true, observeComments: true })
+    h.store.set('github-since', at(-24))
+    for (const stream of ['issues', 'comments']) {
+      h.store.set(`github-stream:${stream}`, { since: at(0), started: { [stream]: at(0) } })
+    }
+    const mine = { user: { login: 'agent-bot', type: 'User' } }
+    repository(h, {
+      issues: [issue(7, { created_at: at(1), updated_at: at(1) }), issue(8, { ...mine, created_at: at(1), updated_at: at(1) })],
+      comments: [{ id: 1, body: 'Looking into it', ...mine, created_at: at(1), updated_at: at(1),
+        issue_url: 'https://api.github.com/repos/acme/widgets/issues/7',
+        html_url: 'https://github.com/acme/widgets/issues/7#issuecomment-1' }] })
+    await pollRound(h)
+    // The person's Issue reaches the gate; the agent's own Issue and its own reply are its own writing and reach nothing.
+    expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([7])
+    // Without this in the health, a deployment where one account is both person and agent reads as a Source that saw nothing.
+    expect(h.health.github).toMatchObject({ state: 'ready', detail: expect.stringContaining('2 from @agent-bot (the agent\'s own account) ignored') })
+    h.store.close()
+  })
   it('fails the round for a stream whose read fails, keeps its cursor, and still reads the other streams', async () => {
     const h = host()
     observe(h, { observeIssues: true, observeComments: true })
