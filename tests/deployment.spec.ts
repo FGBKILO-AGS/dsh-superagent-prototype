@@ -50,6 +50,13 @@ describe('configuration schema', () => {
     expect(() => Config(minimal({ stateDir: 'relative/dir' }))).toThrow()
     expect(() => Config(minimal({ stateDir: '~/dir' }))).toThrow()
   })
+  it('takes a state directory written the way its platform writes an absolute path', () => {
+    for (const stateDir of ['/srv/superagent', 'C:/Users/dev/.dsh/state/superagent', 'C:\\Users\\dev\\.dsh\\state\\superagent', '\\\\server\\share\\superagent'])
+      expect(machineOf(Config(minimal({ stateDir }))).stateDir).toBe(stateDir)
+    // A drive-relative name is not an absolute path: `C:dir` resolves against the current directory of drive C.
+    for (const stateDir of ['relative/dir', '~/dir', 'C:relative/dir'])
+      expect(() => Config(minimal({ stateDir }))).toThrow()
+  })
   it('names keys the configuration does not define, and where the values of older keys live now', () => {
     const raw = minimal({ repository: 'acme/widgets', repositoryPath: '/srv/widgets', blockedCommands: [], author: { name: 'Alice' }, extra: 1 })
     expect(() => machineOf(Config(raw))).toThrow('keys it does not use: repository (now on the GitHub Source), repositoryPath (now in the prepare command of the Execution settings), blockedCommands (now in the Execution settings), author (now prompt text), extra;')
@@ -82,6 +89,9 @@ describe('setup', () => {
     await needs('github', 'repositoryUnreadable', { account: 'Agent-Bot', repository: 'acme/widgets', output }, { repository, cli: unreadable })
     await needs('github', 'agentCliNoAccount', {}, { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), `echo '{}'`) })
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow('nothing-here is not an executable file on PATH')
+    // A Windows host installs the CLI as `gh.exe`, so the lookup takes the file-name suffixes of its platform.
+    program(join(dir, 'bin', 'worker-gh.exe'))
+    expect(executable('worker-gh', join(dir, 'bin'), undefined, ['', '.exe'])).toBe(join(dir, 'bin', 'worker-gh.exe'))
   })
   it('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
     expect(await resolveFeishuBot(machine(), {}, probe, path)).toBeUndefined()
