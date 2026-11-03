@@ -20,7 +20,7 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
 
 ## Prerequisites
 
-- Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ and tmux
+- Node.js 22.19+ or 24+, pnpm, git 2.32+, Python 3.8+ and tmux. Python and tmux serve `scripts/dsh-superagent` only, which imports `fcntl` and drives a tmux session: the managed start and stop need a host where both exist, so macOS and Linux. See Start and stop for running the profile directly on any other host.
 - GitHub CLI (`gh`) 2.48 or later. Source CLI fields must point to `gh` or `lark-cli` wrappers; the host relies on their subcommands and output formats.
 - A repository on github.com; GitHub Enterprise Server is not supported. To create a checkout per Ticket, keep a local clone from which the prepare command can add worktrees. Install `git-lfs` if that repository uses Git LFS.
 - A model provider configured for DeepSeek Harness. dsh-superagent uses the profile's default model unless the Eval or Execution settings name another.
@@ -109,6 +109,8 @@ scripts/dsh-superagent status
 `stop` and `restart` request graceful shutdown and wait up to five minutes for Executors. They never force-kill the process or touch other tmux sessions.
 
 `status` prints process ids, health and setup problems. For a different profile or port, use `--profile` and `--url`, or set `DSH_SUPERAGENT_PROFILE` and `DSH_SUPERAGENT_URL`.
+
+On a host without `fcntl` and tmux, such as Windows, start the profile yourself with `dsh --profile superagent`. The plugin, its Sources, the panel and the worker Sessions need nothing from the script: `start`, `status`, `stop` and `restart`, the `dsh-superagent-<profile>-*.log` files under `.artifacts`, and the Hourly check that reads them all belong to it.
 
 `status`, `start` and `restart` exit with one of four codes:
 
