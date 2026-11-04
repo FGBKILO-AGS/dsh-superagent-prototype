@@ -87,7 +87,7 @@ export function ticketDetail(host: ViewHost, id: string) {
   // Pass `human = false` for bot-originated mandates so the Source kind still labels the actor as a bot if removed from the policy list.
   const human = ticket.mandate.basis.via !== 'bot'
   const cost = costOf(ticket.assignments)
-  return { ...ticketLine(view, ticket), ...cost ? { cost } : {}, mandate: { ...ticket.mandate, actor: view.actor(ticket.mandate.actor, human) },
+  return { ...ticketLine(view, ticket), ...ticket.ci ? { ci: ticket.ci } : {}, ...cost ? { cost } : {}, mandate: { ...ticket.mandate, actor: view.actor(ticket.mandate.actor, human) },
     basis: basisFacts(ticket.mandate.basis, view.rule), paused: store.settings().paused,
     channels: ticket.channels.map(channel => channelLink(view, channel)),
     decision: decision ? decisionView(view, decision) : undefined,

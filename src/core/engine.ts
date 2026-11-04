@@ -1,7 +1,7 @@
 /** The domain Engine: the single entry point of the core, and the role interfaces its callers receive. */
 import { UserError } from './errors.ts'
 import { isoTime, liveTicket } from './model.ts'
-import type { ChannelRef, Decision, PolicyEffect, ThreadRef, Ticket, Trigger, Usage } from './model.ts'
+import type { ChannelRef, CiObservation, Decision, PolicyEffect, ThreadRef, Ticket, Trigger, Usage } from './model.ts'
 import type { Candidate, Repositories } from './ports.ts'
 import type { EngineOptions } from './part.ts'
 import { Assignments, type WorkerReport } from './assignments.ts'
@@ -244,6 +244,13 @@ export class Engine {
    */
   addUsage(ticketId: string, usage: Usage): Ticket { return this.repo.atomic(() => this.assignments.addUsage(ticketId, usage)) }
   /**
+   * Appends one CI read of a Ticket's pull request to that Ticket's ledger.
+   * @throws UserError when the ticket is unknown.
+   */
+  recordCi(ticketId: string, observation: CiObservation): Ticket {
+    return this.repo.atomic(() => this.tickets.recordCi(ticketId, observation))
+  }
+  /**
    * Handles an assignment that was running when the host stopped: restarts it with a recovery note unless its latest report is
    * `waiting`, `ready`, `blocked`, or `failed` and no Input reached its worker after that report, in which case it keeps its
    * Session and state and gets the Inputs that wait for it.
@@ -264,7 +271,7 @@ export class Engine {
 }
 
 /** What Sources ask and tell the Engine. */
-export type EngineForSources = Pick<Engine, 'receive' | 'bindThread' | 'threadClosed'>
+export type EngineForSources = Pick<Engine, 'receive' | 'bindThread' | 'threadClosed' | 'recordCi'>
 /** What the main Session asks of the Engine. */
 export type EngineForMainSession = Pick<Engine, 'candidate' | 'candidateDelivered' | 'decide' | 'attach' | 'reply' | 'requestStatus' | 'note'>
 /** What people ask of the Engine, through the panel or the main Session. */

@@ -2,7 +2,7 @@
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, latestReport, liveTicket, readUntil, runningAssignment, settled, threadKey, waitsForPerson } from './model.ts'
-import type { Assignment, ChannelRef, Evaluation, Follow, Mandate, PolicyEffect, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome,
+import type { Assignment, ChannelRef, CiObservation, Evaluation, Follow, Mandate, PolicyEffect, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome,
   Trigger, TriggerDisposition } from './model.ts'
 import type { AssessmentOutcome } from './ports.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
@@ -19,6 +19,8 @@ export const automatic = (input: TicketInput | undefined): boolean => input?.kin
 const readBefore = (input: Extract<TicketInput, { kind: 'trigger' }>, until: string): boolean => input.readAt === undefined
   ? (input.deliveredAt && input.deliveredAt > input.at ? input.deliveredAt : input.at) <= until : !!input.readAt && input.readAt < until
 const STATUS_REQUEST = 'Report the current ticket status with orchestrator_report. This is a status-only request: do not resume implementation or perform external actions.'
+/** How many CI reads one Ticket keeps; older ones drop, and the count of what dropped stays on the ledger. */
+const CI_HISTORY = 40
 
 /**
  * Manages each ticket's lifecycle: creates the ticket for an accept decision with its Mandate, Subscriptions, and first
@@ -160,6 +162,23 @@ export class Tickets extends EnginePart {
   stop(ticketId: string, reason?: string): Ticket {
     this.end(ticketId, 'human', 'stopped', this.now(), reason)
     return this.require(ticketId)
+  }
+  /**
+   * Appends one CI read of the pull request this Ticket works to its ledger, oldest first, keeping the most recent
+   * `CI_HISTORY` reads and counting the ones it drops.
+   * @throws UserError when the ticket is unknown.
+   */
+  recordCi(ticketId: string, observation: CiObservation): Ticket {
+    const ticket = this.require(ticketId)
+    const ledger = ticket.ci ?? { dropped: 0, items: [] }
+    ledger.items.push(observation)
+    if (ledger.items.length > CI_HISTORY) {
+      ledger.dropped += ledger.items.length - CI_HISTORY
+      ledger.items = ledger.items.slice(-CI_HISTORY)
+    }
+    ticket.ci = ledger
+    this.repo.tickets.save(ticket)
+    return ticket
   }
   /**
    * Ends the stalled assignment of a retryable open ticket (`failed`, `blocked`, or failed input delivery) and starts a new one.

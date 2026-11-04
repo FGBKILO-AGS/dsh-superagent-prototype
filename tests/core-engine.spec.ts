@@ -882,6 +882,32 @@ describe('outcomes', () => {
     expect(() => h.engine.addUsage('t-nope', { input: 1, output: 1 })).toThrow(new UserError('unknownTicket'))
   })
 })
+describe('CI observations', () => {
+  const watch = (at: string, head: string, revision: number, counts: { failed: number; running: number; passed: number }) =>
+    ({ at, head, revision, ...counts })
+  it('appends each CI observation to the Ticket in the order it arrived', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.recordCi(ticketId, watch('2026-09-22T00:00:00Z', 'aaa111', 0, { failed: 1, running: 2, passed: 3 }))
+    h.engine.recordCi(ticketId, watch('2026-09-22T00:05:00Z', 'bbb222', 1, { failed: 0, running: 0, passed: 6 }))
+    expect(h.repo.tickets.get(ticketId)!.ci!.items).toEqual([
+      { at: '2026-09-22T00:00:00Z', head: 'aaa111', revision: 0, failed: 1, running: 2, passed: 3 },
+      { at: '2026-09-22T00:05:00Z', head: 'bbb222', revision: 1, failed: 0, running: 0, passed: 6 }])
+  })
+  it('keeps the forty most recent CI observations and counts the ones it dropped', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    for (let round = 0; round < 45; round++) h.engine.recordCi(ticketId, watch(`2026-09-22T${String(Math.floor(round / 60)).padStart(2, '0')}:${String(round % 60).padStart(2, '0')}:00Z`, `h${round}`, round, { failed: 0, running: 0, passed: 1 }))
+    const ledger = h.repo.tickets.get(ticketId)!.ci!
+    expect(ledger.items.length).toBe(40)
+    expect(ledger.dropped).toBe(5)
+    expect([ledger.items[0]!.head, ledger.items.at(-1)!.head]).toEqual(['h5', 'h44'])
+  })
+  it('refuses to record a CI observation for a Ticket it does not have', () => {
+    const h = harness()
+    expect(() => h.engine.recordCi('t-nope', watch('x', 'h', 0, { failed: 0, running: 0, passed: 0 }))).toThrow(new UserError('unknownTicket'))
+  })
+})
 describe('attach', () => {
   it('sends the routing note for a message the worker has, ends an Eval that holds only that message, and refuses a ticket a person stopped or the Policy no longer holds', () => {
     const h = harness()

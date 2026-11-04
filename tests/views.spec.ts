@@ -112,6 +112,21 @@ it('states each Source by the first state that holds', () => {
     .toEqual({ feishu: 'setup', github: 'setup' })
 })
 
+it('carries a Ticket\'s CI reads to its page with what the ledger dropped, and none when it has read no CI', () => {
+  const host = views()
+  const read = { at: '2026-09-22T00:01:00Z', head: 'abc1234', revision: 1, failed: 1, running: 0, passed: 2 }
+  store.tickets.save({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    ci: { dropped: 3, items: [read] }, assignments: [], inputs: [],
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu',
+      id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] } } as never)
+  expect(ticketDetail(host, 't1')!.ci).toEqual({ dropped: 3, items: [read] })
+  store.tickets.save({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    assignments: [], inputs: [],
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu',
+      id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] } } as never)
+  expect(ticketDetail(host, 't1')).not.toHaveProperty('ci')
+})
+
 it('sums what a Ticket\'s Assignments accounted for into one cost, and drops the total when any reading lacked one', () => {
   const host = views()
   const ran = (id: string, usage: object, startedAt: string, endedAt: string) => ({ id, state: 'ended' as const, createdAt: at,

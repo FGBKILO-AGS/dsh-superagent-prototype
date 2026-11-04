@@ -280,6 +280,13 @@ export type TicketEndBy = 'executor' | 'human'
 export type TicketOutcome = 'completed' | 'merged' | 'closed' | 'dropped' | 'stopped'
 /** A question for a person; `triggerId` is the human message that raised it, whose conversation it goes back to. */
 export interface Attention { id: string; question: string; triggerId?: string }
+/**
+ * One read of a pull request's CI: when the Source read it, at which head, which revision of its state that read was, and
+ * how many checks had failed, were still running, or had passed. `revision` 0 is the first read of that pull request.
+ */
+export interface CiObservation { at: string; head: string; revision: number; failed: number; running: number; passed: number }
+/** The CI reads kept on a Ticket, oldest first, with the count of those dropped once the ledger reached its cap. */
+export interface CiLedger { dropped: number; items: CiObservation[] }
 /** Ticket aggregate: an authorized work item with its assignments, channels, thread bindings, and inputs. */
 export interface Ticket {
   id: string
@@ -288,6 +295,8 @@ export interface Ticket {
   mandate: Mandate
   /** The Channels of the messages it was accepted from, which its replies go to. */
   channels: ChannelRef[]
+  /** What the Source read of the CI on this Ticket's pull request, oldest first; none until a read lands. */
+  ci?: CiLedger
   /** When, by whom, and how the ticket ended, with a person's or the host's reason beyond the outcome; an open ticket has none. */
   ended?: { at: string; by: TicketEndBy; outcome: TicketOutcome; reason?: string }
   /** Open question for a person; cleared by the executor or when the ticket ends. */
