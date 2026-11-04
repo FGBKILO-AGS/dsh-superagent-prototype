@@ -598,6 +598,25 @@ describe('github source', () => {
       { at: expect.any(String), head: 'abc', revision: 1, failed: 0, running: 0, passed: 1 }] })
     h.store.close()
   })
+  it('keeps only the latest forty CI reads on a Ticket after a long run of changes', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('t9'), ...pulled(9) })
+    h.store.threads.save({ key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', lastAt: new Date().toISOString(),
+      subscriptions: ['t9'], correlated: [], pending: [], meta: { number: 9, isPr: true, title: 'Fix' } })
+    const pr = { number: 9, title: 'Fix', state: 'open', html_url: 'https://github.com/acme/widgets/pull/9', user: { login: 'agent-bot' },
+      head: { sha: 'abc', ref: 'agent/nine', repo: { full_name: 'acme/widgets' } } }
+    const routes: Record<string, unknown> = { notifications: [notification(9, 'pulls')], 'pulls/9': pr }
+    github(h, routes)
+    for (let round = 0; round < 45; round++) {
+      routes['commits/abc/check-runs'] = { check_runs: [{ name: 'test', status: 'completed', conclusion: round % 2 ? 'success' : 'failure' },
+        ...Array.from({ length: round % 3 }, (_unused, job) => ({ name: `job${job}`, status: 'in_progress', conclusion: null }))] }
+      await pollRound(h)
+    }
+    const ledger = h.store.tickets.get('t9')!.ci!
+    expect([ledger.items.length, ledger.dropped]).toEqual([40, 5])
+    expect(ledger.items.map(item => item.revision)).toEqual(Array.from({ length: 40 }, (_unused, i) => i + 5))
+    h.store.close()
+  })
   it('reads each notified Issue alone and reads a failed one again next round, from where it was', async () => {
     const h = host()
     h.store.set('github-since', '2026-09-08T00:00:00.000Z')
