@@ -80,6 +80,17 @@ it('lists the CI reads a Ticket kept, marks the latest as current, and says what
   expect(text()).toContain(en.ciCurrent)
 })
 
+it('confirms a stop from the keyboard: typing a reason and pressing Enter sends it without clicking Confirm', async () => {
+  await mount()
+  await click('修复回归')
+  await click(zh.stop)
+  const input = field<HTMLInputElement>(zh.stopReason)
+  await type(input, '人已接管')
+  expect(server.requests.some(request => request.path === 'tickets/t1/stop')).toBe(false)
+  await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  expect(server.requests.find(request => request.path === 'tickets/t1/stop')?.body).toEqual({ reason: '人已接管' })
+})
+
 it('shows what a Ticket accounted for in tokens and how long its workers ran, in either language', async () => {
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, cost: { input: 2000, output: 300, seconds: 120 } }

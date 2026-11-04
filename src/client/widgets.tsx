@@ -82,18 +82,20 @@ export function ConfirmButton({ label, title, message, onConfirm, variant = 'gho
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
   const confirm = useAction(onConfirm)
+  const submit = () => confirm.run(input ? value.trim() || undefined : undefined).then(done => { if (done) setOpen(false) })
   return <>
     <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />}
       onClick={() => { setValue(''); setOpen(true) }}>{label}</Button>
     <Modal open={open} onClose={() => setOpen(false)} title={title} closeLabel={t('close')} description={message}
       footer={<>
         <Button variant="ghost" onClick={() => setOpen(false)}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={confirm.busy}
-          onClick={() => { void confirm.run(input ? value.trim() || undefined : undefined).then(done => { if (done) setOpen(false) }) }}>{t('confirm')}</Button>
+        <Button variant="primary" disabled={confirm.busy} onClick={() => { void submit() }}>{t('confirm')}</Button>
       </>}>
+      {/* Enter confirms the same action the footer button runs, so a typed answer needs no second reach for the mouse. */}
       {input && <div className="dt-field">
         <span className="dt-field-head"><label htmlFor={id}>{input.label}</label></span>
-        <span className="dt-input"><input id={id} value={value} onChange={event => setValue(event.target.value)} /></span>
+        <span className="dt-input"><input id={id} value={value} onChange={event => setValue(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') void submit() }} /></span>
       </div>}
     </Modal>
   </>
