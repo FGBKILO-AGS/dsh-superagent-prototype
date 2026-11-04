@@ -60,6 +60,20 @@ it('sends the reason a person types into the stop dialog with the stop request',
   expect(server.requests.find(request => request.path === 'tickets/t1/stop')).toMatchObject({ method: 'POST', body: { reason: '人已接管' } })
 })
 
+it('shows what a Ticket accounted for in tokens and how long its workers ran, in either language', async () => {
+  const t1 = server.ticketDetails.t1!
+  server.ticketDetails.t1 = { ...t1, cost: { input: 2000, output: 300, seconds: 120 } }
+  await mount()
+  await click('修复回归')
+  expect(text()).toContain(zh['term.cost'])
+  expect(text()).toContain(zh.costIn.replace('{value}', '2000'))
+  expect(text()).toContain(zh.costSeconds.replace('{value}', '120'))
+  expect(text()).not.toContain(zh.costTotal.replace('{value}', ''))
+  await remount(en)
+  expect(text()).toContain(en['term.cost'])
+  expect(text()).toContain(en.costOut.replace('{value}', '300'))
+})
+
 it('shows a Ticket with its stage, its Mandate details with the Trigger and Decision behind it, its Threads, and the rest behind disclosures', async () => {
   await mount()
   await click(all('.dt-open').find(button => button.textContent === '修复回归')!)

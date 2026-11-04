@@ -2,7 +2,7 @@
 import { key } from './ids.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, liveTicket, runningAssignment } from './model.ts'
-import type { ReportState, Ticket } from './model.ts'
+import type { ReportState, Ticket, Usage } from './model.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
 import type { Replies } from './replies.ts'
 import { automatic, type Tickets } from './tickets.ts'
@@ -89,6 +89,22 @@ export class Assignments extends EnginePart {
     const settled = !!report && ['waiting', 'ready', 'blocked', 'failed'].includes(report.state) && !busy
     if (!settled) this.tickets.restart(ticket, running, 'hostRestarted', RECOVERY_NOTE)
     else if (ticket.undelivered.length) this.options.executor.deliver(ticket, running)
+  }
+  /**
+   * Adds one token accounting reading to the Assignment the Ticket runs, keeping a running total. A total survives only while
+   * every reading reported one, so a mixed history reports no total rather than a partial one.
+   * @throws UserError for an unknown Ticket, or a Ticket with no Assignment.
+   */
+  addUsage(ticketId: string, usage: Usage): Ticket {
+    const ticket = this.require(ticketId)
+    const assignment = runningAssignment(ticket) ?? latestAssignment(ticket)
+    if (!assignment) throw new UserError('unknownAssignment')
+    const before = assignment.usage
+    const total = before === undefined ? usage.total : before.total !== undefined && usage.total !== undefined ? before.total + usage.total : undefined
+    assignment.usage = { input: (before?.input ?? 0) + usage.input, output: (before?.output ?? 0) + usage.output,
+      ...(total === undefined ? {} : { total }) }
+    this.repo.tickets.save(ticket)
+    return ticket
   }
   /**
    * Records a worker status report on an open ticket's current assignment, updating `attention`, `answers`, held automated

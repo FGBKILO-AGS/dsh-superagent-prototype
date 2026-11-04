@@ -868,6 +868,19 @@ describe('outcomes', () => {
     expect(ticketOutcome(h.repo.tickets.get(ticketId)!)).toBe('stopped')
     expect(ticketOutcome({})).toBeUndefined()
   })
+  it('adds each token reading onto the Assignment the Ticket is running, as a running total', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    const last = () => h.repo.tickets.get(ticketId)!.assignments.at(-1)!
+    h.engine.addUsage(ticketId, { input: 900, output: 100, total: 1000 })
+    expect(last().usage).toEqual({ input: 900, output: 100, total: 1000 })
+    h.engine.addUsage(ticketId, { input: 1100, output: 200 })
+    expect(last().usage).toEqual({ input: 2000, output: 300 })
+  })
+  it('refuses to account token use for a Ticket it does not have', () => {
+    const h = harness()
+    expect(() => h.engine.addUsage('t-nope', { input: 1, output: 1 })).toThrow(new UserError('unknownTicket'))
+  })
 })
 describe('attach', () => {
   it('sends the routing note for a message the worker has, ends an Eval that holds only that message, and refuses a ticket a person stopped or the Policy no longer holds', () => {

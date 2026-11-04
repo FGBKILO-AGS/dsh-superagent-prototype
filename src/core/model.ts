@@ -214,6 +214,11 @@ export type AssignmentState = 'pending' | 'running' | 'ended'
  * ready (`ready`), a person must act to unblock or recover it (`blocked` or `failed`), or nothing is left to do (`dropped`).
  */
 export type ReportState = 'progress' | 'waiting' | 'ready' | 'blocked' | 'failed' | 'dropped'
+/**
+ * Tokens a worker Session accounted for: uncached input, output, and the exact call total when the adapter gave one.
+ * Attempts that committed no message report no usage, so a reading is a lower bound on what the work cost.
+ */
+export interface Usage { input: number; output: number; total?: number }
 /** Binding between a ticket and one executor instance. */
 export interface Assignment {
   id: string
@@ -223,6 +228,8 @@ export interface Assignment {
   endedAt?: string
   endedReason?: string
   report?: { state: ReportState; summary: string; at: string }
+  /** What the Session accounted for while this Assignment ran, read as its work ended. */
+  usage?: Usage
   /** When Inputs last reached the worker; one at or after `report.at` means the worker has been busy with Inputs since that report. */
   deliveredAt?: string
   /**

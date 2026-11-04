@@ -61,7 +61,7 @@ export interface ExecutorHost {
   readonly context: Context
   /** Where the Executor reports what happened to Assignments and Inputs. */
   readonly engine: Pick<EngineForExecutor, 'assignmentStarted' | 'inputsDelivered' | 'inputsRead' | 'turnEnded' | 'deliveryFailed' | 'report'
-    | 'assignmentInterrupted'>
+    | 'assignmentInterrupted' | 'addUsage'>
   readonly store: Pick<Store, 'tickets' | 'triggers' | 'set' | 'settings' | 'atomic' | 'afterCommit'>
   /** Durable effect queue through which launches and input deliveries run. */
   readonly effects: Pick<Effects, 'enqueue' | 'handle'>
@@ -500,6 +500,16 @@ export class DshExecutor implements Executor {
         const read = this.host.store.tickets.get(ticketId)?.inputs.filter(input => input.kind === 'trigger' && !input.readAt
           && this.host.sessions.promptedId(input.id) === message.id).map(input => input.id) ?? []
         if (read.length) this.host.engine.inputsRead(ticketId, read)
+      }))
+    }))
+    // The token use each committed assistant message reports, added to the running Assignment as it appears: a host that stops
+    // mid-work keeps what it already read. Attempts that committed no message report no usage, so this total is a lower bound.
+    this.disposers.push(ctx.on('session/event', (session, event) => {
+      const ticketId = ticketOfSession(session.id)
+      if (event.type !== 'assistant/message' || ticketId === undefined || event.data.usage === undefined || this.host.closing()) return
+      const { inputTokens: input, outputTokens: output, totalTokens: total } = event.data.usage
+      void this.background(Promise.resolve().then(() => {
+        this.host.engine.addUsage(ticketId, { input, output, ...(total === undefined ? {} : { total }) })
       }))
     }))
     this.disposers.push(ctx.on('agent/error', ({ agent, error }) => {

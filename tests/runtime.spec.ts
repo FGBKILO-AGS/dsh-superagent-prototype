@@ -55,7 +55,7 @@ async function api(method: string, path: string): Promise<{ status: number; body
   await http(req, { writeHead: (code: number) => { status = code }, end: (data: string) => { text = data } })
   return { status, body: JSON.parse(text) }
 }
-let agents: Map<string, { id: string; status: string; inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }; cancel: ReturnType<typeof vi.fn>; inject: ReturnType<typeof vi.fn> }>
+let agents: Map<string, { id: string; status: string; inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }; cancel: ReturnType<typeof vi.fn>; inject: ReturnType<typeof vi.fn>; session: { id: string; append: (type: string, data: unknown) => void; snapshotEvents: () => unknown[] } }>
 const runTool = async (sessionId: string, name: string, args: unknown) => {
   const tool = tools.get(sessionId)?.get(name)
   if (!tool) throw new Error(`Tool ${name} is not registered for ${sessionId}`)
@@ -195,7 +195,7 @@ beforeEach(async () => {
         deliveries({ sessionId, mode, id: message.id, text: message.content.map(block => block.type === 'text' ? block.text : '').join('') })
         agents.get(sessionId)!.status = 'running'
       })
-      agents.set(sessionId, { id: sessionId, ctx: agentCtx, inbox, followup: deliver('queue'), steer: deliver('steer'), status: 'idle', inject: vi.fn(), session: { id: sessionId, header: { agentPreset }, snapshotEvents: () => modelEvents, requestHeader: () => undefined, append: vi.fn((type: string, data: unknown) => { modelEvents.push({ type, data }) }) }, cancel: vi.fn(), whenIdle: async () => {} } as never)
+      agents.set(sessionId, { id: sessionId, ctx: agentCtx, inbox, followup: deliver('queue'), steer: deliver('steer'), status: 'idle', inject: vi.fn(), session: { id: sessionId, header: { agentPreset }, snapshotEvents: () => modelEvents, requestHeader: () => undefined, append: vi.fn((type: string, data: unknown) => { const event = { type, data }; modelEvents.push(event); ctx.emit('session/event', agents.get(sessionId) as never, event as never); return event }) }, cancel: vi.fn(), whenIdle: async () => {} } as never)
       bindScopeParent(agents.get(sessionId)!, preset)
     }),
     selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(async id => agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } }), rename: vi.fn(async () => {}),
@@ -1566,10 +1566,38 @@ it('refuses an ended ticket\'s worker its tools, and restricts the main Session 
   expect(restricts.get(sessionId)).toEqual([{ allow: ['read', 'read_image', 'grep', 'bash', 'job_output', 'job_list', 'job_kill', 'web_search', 'skill'] }])
 })
 
+it('keeps accounted tokens on the Assignment that ran while its Session reported them, across a retry', async () => {
+  const { ticket, sessionId } = await acceptedTicket()
+  const message = (turn: number, usage: Record<string, number>) => agents.get(sessionId)!.session.append('assistant/message',
+    { turn, step: turn, message: { role: 'assistant', content: [] }, usage })
+  const assignments = () => runtime.store.tickets.get(ticket.id)!.assignments
+  message(1, { inputTokens: 400, outputTokens: 40 })
+  await runtime.idle()
+  expect(assignments().at(-1)!.usage).toEqual({ input: 400, output: 40 })
+  runtime.engine.report(ticket.id, { state: 'failed', summary: '构建挂了' })
+  runtime.engine.retryTicket(ticket.id)
+  message(2, { inputTokens: 300, outputTokens: 30 })
+  await runtime.idle()
+  expect(assignments().map(assignment => assignment.usage)).toEqual([{ input: 400, output: 40 }, { input: 300, output: 30 }])
+})
+
 it('gives an explicit ticket\'s worker a prompt without the limits of an inferred Mandate', async () => {
   const { sessionId } = await acceptedTicket()
   await runtime.idle()
   expect(sections.get(sessionId)!.text({})).not.toContain(mandateInstructions({ strength: 'inferred' }))
+})
+
+it('accounts the running Assignment for the tokens its Session reports, and keeps no total when one message lacked it', async () => {
+  const { ticket, sessionId } = await acceptedTicket()
+  const message = (turn: number, usage: Record<string, number>) => agents.get(sessionId)!.session.append('assistant/message',
+    { turn, step: turn, message: { role: 'assistant', content: [] }, usage })
+  agents.get(sessionId)!.session.append('assistant/attempt', { turn: 1, step: 1, stream: [], usage: { inputTokens: 5000, outputTokens: 50 } })
+  message(1, { inputTokens: 900, outputTokens: 100, totalTokens: 1000 })
+  await runtime.idle()
+  expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.usage).toEqual({ input: 900, output: 100, total: 1000 })
+  message(2, { inputTokens: 1100, outputTokens: 200 })
+  await runtime.idle()
+  expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.usage).toEqual({ input: 2000, output: 300 })
 })
 
 it('runs a launch that fails for a passing reason again on the launch backoff three times, then fails its ticket; a failed prepare fails at once', async () => {

@@ -46,7 +46,11 @@ function Details({ icon, title, open = false, children }: { icon: IconName; titl
 function Assignments({ ticket }: { ticket: TicketPageView }) {
   const { t } = usePanel()
   const report = (state: string) => t('assignmentReportShort', { state: valueLabel(t, 'report', state) })
-  return <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
+  const cost = ticket.cost
+  const parts = cost ? [t('costIn', { value: String(cost.input) }), t('costOut', { value: String(cost.output) }),
+    ...(cost.total === undefined ? [] : [t('costTotal', { value: String(cost.total) })]), t('costSeconds', { value: String(cost.seconds) })] : []
+  return <>
+    <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
     <Dot state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'} label={valueLabel(t, 'assignment', item.state)} />
     <div className="dt-row-main">
       <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
@@ -64,6 +68,9 @@ function Assignments({ ticket }: { ticket: TicketPageView }) {
     {item.ref && item.ref !== ticket.sessionId && <div className="dt-row-actions"><SessionButton variant="outline"
       sessionId={item.ref} /></div>}
   </li>)}</ul>
+    {/* What the workers of this Ticket accounted for in total; a reading omits attempts that committed no message. */}
+    {cost && <div className="dt-row-meta"><span>{t('term.cost')}</span><span>{parts.join(' · ')}</span></div>}
+  </>
 }
 function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: string }) {
   const { t, navigate } = usePanel()
@@ -170,8 +177,8 @@ export function TicketPage({ id }: { id: string }) {
         context={thread.context} />)}</ul>
     </Section>}
     <div className="dt-details">
-      {/* A single Assignment adds nothing beyond the status line; list Assignments only once work has been resumed or handed over. */}
-      {data.assignments.length > 1 && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
+      {/* List Assignments once work has been resumed or handed over, or once any of them accounted for token use. */}
+      {(data.assignments.length > 1 || data.cost) && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
         ticket={data} /></Details>}
       {data.environment.length > 0 && <Details icon="settings" title={t('term.environment')}>
         <table className="dt-table"><tbody>{data.environment.map(variable => <tr key={variable.key} title={localized(t,
