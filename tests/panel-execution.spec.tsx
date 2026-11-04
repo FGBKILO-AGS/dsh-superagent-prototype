@@ -60,6 +60,26 @@ it('sends the reason a person types into the stop dialog with the stop request',
   expect(server.requests.find(request => request.path === 'tickets/t1/stop')).toMatchObject({ method: 'POST', body: { reason: '人已接管' } })
 })
 
+it('lists the CI reads a Ticket kept, marks the latest as current, and says what the ledger dropped, in either language', async () => {
+  const t1 = server.ticketDetails.t1!
+  const read = (at: string, head: string, revision: number, counts: { failed: number; running: number; passed: number }) =>
+    ({ at, head, revision, ...counts })
+  server.ticketDetails.t1 = { ...t1, ci: { dropped: 2, items: [
+    read('2026-09-22T00:00:00Z', 'abc1234', 0, { failed: 1, running: 2, passed: 3 }),
+    read('2026-09-22T00:05:00Z', 'def5678', 1, { failed: 0, running: 0, passed: 6 })] } }
+  await mount()
+  await click('修复回归')
+  expect(text()).toContain(zh['term.ciReads'])
+  expect(text()).toContain(zh.ciFailed.replace('{value}', '1'))
+  expect(text()).toContain(zh.ciPassed.replace('{value}', '6'))
+  expect(text()).toContain(zh.ciDropped.replace('{value}', '2'))
+  expect(text()).toContain(zh.ciCurrent)
+  await remount(en)
+  expect(text()).toContain(en['term.ciReads'])
+  expect(text()).toContain(en.ciRunning.replace('{value}', '2'))
+  expect(text()).toContain(en.ciCurrent)
+})
+
 it('shows what a Ticket accounted for in tokens and how long its workers ran, in either language', async () => {
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, cost: { input: 2000, output: 300, seconds: 120 } }

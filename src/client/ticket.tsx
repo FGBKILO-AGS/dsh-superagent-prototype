@@ -177,6 +177,19 @@ export function TicketPage({ id }: { id: string }) {
         context={thread.context} />)}</ul>
     </Section>}
     <div className="dt-details">
+      {/* Newest read first; the first row is what CI says now, and `dropped` says the ledger is not the whole history. */}
+      {data.ci && <Details icon="history" title={`${t('term.ciReads')} · ${data.ci.items.length}`} open>
+        <ul className="dt-plain-list">{data.ci.items.slice().reverse().map((item, index) => <li key={`${item.revision}:${item.head}`}>
+          <div className="dt-row-meta">
+            <span className="dt-mono">{item.head.slice(0, 7)}</span>
+            <span>{[t('ciFailed', { value: String(item.failed) }), t('ciRunning', { value: String(item.running) }),
+              t('ciPassed', { value: String(item.passed) })].join(' · ')}</span>
+            <When at={item.at} />
+            {index === 0 && <Tag tone={item.failed ? 'danger' : 'neutral'}>{t('ciCurrent')}</Tag>}
+          </div>
+        </li>)}</ul>
+        {data.ci.dropped > 0 && <Hint>{t('ciDropped', { value: String(data.ci.dropped) })}</Hint>}
+      </Details>}
       {/* List Assignments once work has been resumed or handed over, or once any of them accounted for token use. */}
       {(data.assignments.length > 1 || data.cost) && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
         ticket={data} /></Details>}
