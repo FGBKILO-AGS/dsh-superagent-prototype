@@ -79,6 +79,12 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
   // Omit `sender` when it matches `actor`, which is already shown on the status line.
   const facts = ticket.basis.facts.filter(item => !(item.name === 'sender' && item.value === actor))
   const direction = decision?.direction
+  // What the judgement was made on: the Tickets already on the Thread when its input went to the assessor.
+  const judged: [string, ReactNode][] = decision?.judgedOn ? [[t('term.evalInput'), <div className="dt-kv-stack">
+    {decision.judgedOn.tickets.length ? decision.judgedOn.tickets.map(item => <Hint key={item.id}>{item.title} · {t(item.ended ? 'evalInputEnded' : 'evalInputOpen')}</Hint>)
+      : <Hint>{t('evalInputNone')}</Hint>}
+    <span className="dt-row-meta"><When at={decision.judgedOn.at} /></span>
+  </div>]] : []
   const rows: [string, ReactNode][] = decision ? [
     [t('term.trigger'), <button type="button" className="dt-trigger-link" onClick={() => navigate({ page: 'trigger', id: decision.thread,
       query: { trigger: decision.triggerIds[0] ?? '' } })}>
@@ -95,6 +101,7 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
         design: t(direction.requires_design_decision ? 'designNeeded' : 'designNotNeeded') })} {t('directionEvidence',
           { evidence: direction.evidence })}</Hint>}
     </div>],
+    ...judged,
   ] : []
   const version = <button type="button" className="dt-textlink dt-mono" onClick={() => navigate(settingsRoute('eval',
     { version: mandate.policyVersion }))}>{mandate.policyVersion.slice(0, 8)}</button>

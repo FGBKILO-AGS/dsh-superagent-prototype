@@ -183,6 +183,26 @@ describe('eval', () => {
     expect(h.repo.threads.get('chat:t1')).not.toHaveProperty('expired')
   })
 })
+describe('eval audit', () => {
+  it('keeps the input it handed the assessor, unchanged as the Thread moves on', () => {
+    const h = harness()
+    h.engine.receive(trigger('1')); h.pump()
+    const first = h.requests[0]!
+    expect(first.tickets).toEqual([])
+    h.decide(first, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested', acknowledgement: 'ok' })
+    h.settle()
+    // The database has moved on: this Eval is no longer in progress, and the accept left a Ticket on the Thread.
+    expect(h.repo.threads.get('chat:t1')!.evaluating).toBeUndefined()
+    expect(h.repo.tickets.list()).toHaveLength(1)
+    const kept = h.repo.evalInputs.get(first.evalId)!
+    expect(kept.at).toEqual(expect.any(String))
+    // What the assessor was handed stays what it was handed, so the Decision can be read against its real input.
+    expect(kept.candidate.thread.evaluating).toBeDefined()
+    expect(kept.candidate.tickets).toEqual([])
+    expect(kept.candidate.triggers.map(trigger => trigger.id)).toEqual(['1'])
+    expect(kept.candidate.policyVersion).toBe('v1')
+  })
+})
 describe('subscription fan-out', () => {
   it('delivers a person\'s later message on a subscribed thread to the live ticket as context, and not to Eval', async () => {
     const h = harness()
@@ -1050,6 +1070,18 @@ describe('replies', () => {
   })
 })
 describe('ticket commands', () => {
+  it('names who merged the pull request that closed a followed Thread', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-7' }, true)
+    h.engine.threadClosed({ source: 'gh', id: 'pr-7' }, 'merged', '2026-09-23T00:00:00Z', 'reviewer-one')
+    expect(h.repo.tickets.get(ticketId)!.follows?.[0]?.closed).toEqual({ at: '2026-09-23T00:00:00.000Z', outcome: 'merged', by: 'reviewer-one' })
+    // A close nobody merged through names no one, which is how an audit tells the two endings apart later.
+    const other = accepted(h, '3', 't2').ticketId!
+    h.engine.bindThread(other, { source: 'gh', id: 'pr-8' }, true)
+    h.engine.threadClosed({ source: 'gh', id: 'pr-8' }, 'closed', '2026-09-23T00:02:00Z')
+    expect(h.repo.tickets.get(other)!.follows?.[0]?.closed).toEqual({ at: '2026-09-23T00:02:00.000Z', outcome: 'closed' })
+  })
   it('ends a ticket by the same rule on a close and on a ready report: once no PR it opened is open, as the latest of them ended', () => {
     const h = harness()
     const ticketId = accepted(h).ticketId!

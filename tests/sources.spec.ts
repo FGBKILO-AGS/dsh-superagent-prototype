@@ -567,9 +567,11 @@ describe('github source', () => {
     expect(facts()).not.toHaveProperty('autoMerge')
     // Only a change after the first look is a Trigger.
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta)).toEqual([expect.objectContaining({ ci: true, revision: 1 })])
-    routes['pulls/9'] = { ...pr, state: 'closed', merged: true, merged_at: '2026-09-09T00:00:00Z' }
+    routes['pulls/9'] = { ...pr, state: 'closed', merged: true, merged_at: '2026-09-09T00:00:00Z', merged_by: { login: 'reviewer-one' } }
     await pollRound(h)
     expect(h.store.tickets.get('t9')).toMatchObject({ ended: { outcome: 'merged' } })
+    // Who merged it is kept with the close of the Thread it followed, so the ending can be audited afterwards.
+    expect(h.store.tickets.get('t9')!.follows?.find(item => item.thread === 'github:9')?.closed).toMatchObject({ by: 'reviewer-one' })
     h.store.close()
   })
   it('reads each notified Issue alone and reads a failed one again next round, from where it was', async () => {

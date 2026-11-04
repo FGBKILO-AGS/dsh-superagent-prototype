@@ -74,12 +74,12 @@ export class Tickets extends EnginePart {
    * Record that a Thread open tickets follow closed, and end each one done with its Threads (see `followsDone`), unless its
    * work has not finished (see `unfinished`); such work ends the ticket once it reports ready.
    */
-  threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void {
+  threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string, by?: string): void {
     const closed = threadKey(thread)
     for (const ticket of this.repo.tickets.open()) {
       const follow = ticket.follows?.find(item => item.thread === closed && !item.closed)
       if (!follow) continue
-      follow.closed = { at, outcome }
+      follow.closed = { at, outcome, ...(by ? { by } : {}) }
       this.repo.tickets.save(ticket)
       const done = this.followsDone(ticket)
       if (!done || this.unfinished(ticket, at)) continue

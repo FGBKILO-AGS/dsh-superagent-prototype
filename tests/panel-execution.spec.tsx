@@ -222,3 +222,18 @@ it('sends one stop for a double click on Confirm', async () => {
   await act(async () => { confirm.click(); confirm.click() })
   expect(server.requests.filter(request => request.path === 'tickets/t1/stop')).toHaveLength(1)
 })
+it('names the work that was already on the Thread when the Decision was judged, in both languages', async () => {
+  const t1 = server.ticketDetails.t1!
+  server.ticketDetails.t1 = { ...t1, decision: { ...t1.decision!, judgedOn: { at: '2026-09-22T00:04:00Z', policyVersion: 'v1',
+    tickets: [{ id: 't0', title: '已在跑的活', ended: false }, { id: 't9', title: '上一次的活', ended: true }] } } }
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  const line = (labels: typeof zh | typeof en) => all('.dt-kv > div')
+    .find(row => row.querySelector('dt')?.textContent === labels['term.evalInput'])?.querySelector('dd')?.textContent
+  expect(line(zh)).toContain('已在跑的活')
+  expect(line(zh)).toContain(zh['evalInputOpen'])
+  expect(line(zh)).toContain(zh['evalInputEnded'])
+  await remount(en)
+  expect(line(en)).toContain('已在跑的活')
+  expect(line(en)).toContain(en['evalInputOpen'])
+})

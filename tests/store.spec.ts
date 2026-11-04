@@ -45,6 +45,17 @@ const ticket = (id: string, state: 'open' | 'ended', assignments: Pick<Assignmen
 const thread = (id: string, source: string, fields: Partial<Thread> = {}): Thread =>
   ({ key: `${source}:${id}`, ref: { source, id }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {}, ...fields })
 const ids = (items: { id?: string; key?: string }[]) => items.map(item => item.id ?? item.key).sort()
+it('keeps the input an Eval was judged on, by Eval id', () => {
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  const candidate = { evalId: 'e1', thread: thread('1', 'github', { pending: ['a'] }), triggers: [], strength: 'explicit' as const,
+    policyVersion: 'v1', tickets: [] }
+  store.evalInputs.save({ evalId: 'e1', at: '2026-09-23T00:00:00Z', candidate })
+  expect(store.evalInputs.get('e1')).toEqual({ evalId: 'e1', at: '2026-09-23T00:00:00Z', candidate })
+  expect(store.evalInputs.get('e2')).toBeUndefined()
+  // Kept with the settings and prompt versions that input names, so one store holds what a Decision was judged on.
+  expect(store.keys('eval-input:')).toEqual(['eval-input:e1'])
+  store.close()
+})
 it('reads the working sets alone, in SQLite as in memory, and follows each save', () => {
   const store = new Store(join(directory, 'orchestrator.sqlite'))
   for (const repo of [store, new MemoryRepositories()] as Repositories[]) {

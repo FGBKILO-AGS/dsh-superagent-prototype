@@ -311,7 +311,7 @@ export interface Ticket {
  * closed. `followsDone` holds once no Thread of its own is open, or, when the ticket has no `own` Thread, once every followed
  * Thread closed; the ticket then ends unless its work has not finished (see `Tickets.unfinished`).
  */
-export interface Follow { thread: string; own: boolean; closed?: { at: string; outcome: 'merged' | 'closed' } }
+export interface Follow { thread: string; own: boolean; closed?: { at: string; outcome: 'merged' | 'closed'; /** The login that merged it, when a merge closed the Thread and GitHub names who. */ by?: string } }
 export interface Execution { name: string; directory: string; assignment: string }
 
 /** Whether a ticket is open: it has not ended. */
