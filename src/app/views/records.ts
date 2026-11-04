@@ -193,6 +193,16 @@ const AuditSchema = z.object({
 export type DecisionOutcome = DecisionKind | 'wouldAccept'
 const outcomeOf = (decision: Decision): DecisionOutcome =>
   decision.kind === 'ignore' && AuditSchema.parse(decision.audit ?? {}).would_accept ? 'wouldAccept' : decision.kind
+/**
+ * The Tickets that were on the Thread when this Eval was judged, read back from the input the assessor was handed. Absent
+ * for an Eval that ended before this was kept, and for a Decision recorded without an Eval.
+ */
+function judgedOn(store: Snapshot['store'], decision: Decision) {
+  const kept = decision.evalId ? store.evalInputs.get(decision.evalId) : undefined
+  if (!kept) return {}
+  return { judgedOn: { at: kept.at, policyVersion: kept.candidate.policyVersion,
+    tickets: kept.candidate.tickets.map(ticket => ({ id: ticket.id, title: ticket.title, ended: !!ticket.ended })) } }
+}
 export function decisionView(view: Snapshot, decision: Decision) {
   const { store } = view
   const thread = store.threads.get(decision.threadKey)
@@ -205,6 +215,6 @@ export function decisionView(view: Snapshot, decision: Decision) {
     rules: judged.map(rule => ({ ...view.rule(rule.rule_id), matched: rule.matched, reason: rule.reason })),
     ...audit.direction ? { direction: audit.direction } : {},
     ...thread ? { threadTitle: threadTitle(store, thread) } : {}, preview: texts.join(' / '),
-    ticketTitle: decision.ticketId ? store.tickets.get(decision.ticketId)?.title : undefined }
+    ticketTitle: decision.ticketId ? store.tickets.get(decision.ticketId)?.title : undefined, ...judgedOn(store, decision) }
 }
 export type DecisionView = ReturnType<typeof decisionView>

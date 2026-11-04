@@ -319,3 +319,23 @@ it('reads each ticket a page\'s follow-ups reached once, and nothing for a messa
   expect(followupOwners(store.triggers.get('f3')!, records)).toEqual([])
   expect([records.tickets.get, records.threads.get].map(read => read.mock.calls.length)).toEqual([0, 0])
 })
+it('shows the Tickets that were on the Thread when a Decision was judged', () => {
+  const host = views()
+  store.threads.save({ key: 'feishu:oc_1:om_root', ref: { source: 'feishu', id: 'oc_1:om_root' }, createdAt: at, subscriptions: [],
+    correlated: [], pending: [], meta: {} })
+  store.tickets.save({ id: 't-live', title: 'Already running', decisionId: 'd1', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    mandate: { strength: 'explicit', policyVersion: 'v', basis: { via: 'listed' }, actor: { source: 'feishu', id: 'ou_alice' }, scope: '' },
+    origin: { triggerId: 'f0', triggerIds: ['f0'] }, assignments: [], inputs: [] })
+  store.decisions.save({ id: 'd1', evalId: 'e1', threadKey: 'feishu:oc_1:om_root', triggerIds: ['f1'], policyVersion: 'v', at,
+    kind: 'accept', reason: [{ code: 'requested' }], strength: 'explicit' })
+  store.evalInputs.save({ evalId: 'e1', at, candidate: { evalId: 'e1', thread: store.threads.get('feishu:oc_1:om_root')!, triggers: [],
+    strength: 'explicit', policyVersion: 'v', tickets: [store.tickets.get('t-live')!] } })
+  const detail = () => threadDetail(host, 'feishu:oc_1:om_root', undefined, 50)!.decisions
+  expect(detail().find(item => item.id === 'd1')!.judgedOn)
+    .toEqual({ at, policyVersion: 'v', tickets: [{ id: 't-live', title: 'Already running', ended: false }] })
+  // The Ticket page reads the same field, which is the one the panel's row renders.
+  expect(ticketDetail(host, 't-live')!.decision!.judgedOn).toEqual(detail().find(item => item.id === 'd1')!.judgedOn)
+  // An Eval that kept no input shows no line rather than an empty one.
+  store.decisions.save({ ...store.decisions.get('d1')!, id: 'd2', evalId: 'e-none' })
+  expect(detail().find(item => item.id === 'd2')).not.toHaveProperty('judgedOn')
+})
