@@ -50,6 +50,16 @@ it('stops an open Ticket from its page after confirmation', async () => {
   expect(server.requests.some(request => request.path === 'tickets/t1/stop' && request.method === 'POST')).toBe(true)
 })
 
+it('sends the reason a person types into the stop dialog with the stop request', async () => {
+  await mount()
+  await click('修复回归')
+  await click(zh.stop)
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(zh.stopReason)
+  await type(field<HTMLInputElement>(zh.stopReason), '人已接管')
+  await click(zh.confirm)
+  expect(server.requests.find(request => request.path === 'tickets/t1/stop')).toMatchObject({ method: 'POST', body: { reason: '人已接管' } })
+})
+
 it('shows a Ticket with its stage, its Mandate details with the Trigger and Decision behind it, its Threads, and the rest behind disclosures', async () => {
   await mount()
   await click(all('.dt-open').find(button => button.textContent === '修复回归')!)

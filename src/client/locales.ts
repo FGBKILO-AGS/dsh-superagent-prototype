@@ -295,6 +295,7 @@ const TEXT = {
   'input.note': ['主 Session 的备注', 'Orchestrator note'],
   attentionPrefix: ['待人工决定：', 'Attention: '],
   stopConfirmTitle: ['停止工单', 'Stop Ticket'],
+  stopReason: ['为什么停止（可留空）', 'Why stop (optional)'],
   stopConfirm: ['停止“{title}”？当前派工结束，Session 和执行目录保留；停止收回授权，之后线程里的消息不再恢复它，要继续需要重新接单。', 'Stop "{title}"? Its current Assignment ends; its Session and directory stay. Stopping withdraws its Mandate: later messages on its Threads do not resume it, and continuing needs a new accept.'],
   endedAt: ['{time} {outcome}：{reason}', '{time} {outcome}: {reason}'],
   assignmentNumber: ['第 {number} 次派工', 'Assignment {number}'],

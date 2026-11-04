@@ -96,3 +96,31 @@ it('answers a prompt save that lost a race with 409, and a settings body over 12
     body: { error: `Request exceeds ${128 * 1024} bytes` } })
   expect(saves).toEqual([])
 })
+
+/** A stop route whose Engine records the arguments it was given. */
+function stopping() {
+  const stops: unknown[][] = []
+  const call = serve({
+    store: { tickets: { get: () => ({ id: 't9' }) }, blockRevision: () => 0 },
+    engine: { stopTicket: (...args: unknown[]) => { stops.push(args); return { id: 't9' } } },
+  })
+  return { call, stops }
+}
+
+it('passes the reason a person gives for stopping a Ticket down to the Engine', async () => {
+  const { call, stops } = stopping()
+  expect(await call('POST', 'tickets/t9/stop', { reason: '人已接管' })).toEqual({ status: 200, body: { stopped: true } })
+  expect(stops).toEqual([['t9', '人已接管']])
+})
+
+it('gives the Engine no reason when the panel stops a Ticket with an empty one', async () => {
+  const { call, stops } = stopping()
+  expect(await call('POST', 'tickets/t9/stop', { reason: '   ' })).toEqual({ status: 200, body: { stopped: true } })
+  expect(stops).toEqual([['t9', undefined]])
+})
+
+it('refuses to stop a Ticket on a body whose reason is not text', async () => {
+  const { call, stops } = stopping()
+  expect((await call('POST', 'tickets/t9/stop', { reason: 7 })).status).toBe(400)
+  expect(stops).toEqual([])
+})

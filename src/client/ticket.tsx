@@ -199,7 +199,8 @@ export function TicketPage({ id }: { id: string }) {
     {data.actions.stop && <div className="dt-danger-zone">
       <span className="dt-hint">{t('stopHint')}</span>
       <ConfirmButton variant="outline" label={t('stop')} title={t('stopConfirmTitle')} message={t('stopConfirm', { title: data.title })}
-        onConfirm={() => after(call('POST tickets/:id/stop', { id }))} />
+        input={{ label: t('stopReason') }}
+        onConfirm={reason => after(call('POST tickets/:id/stop', { id, body: { reason } }))} />
     </div>}
   </>
 }
