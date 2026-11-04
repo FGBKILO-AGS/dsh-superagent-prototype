@@ -10,6 +10,7 @@ const PullSchema = z.looseObject({
   title: z.string().optional(), state: z.string(), html_url: z.string(), user: UserSchema,
   body: z.string().nullish(), created_at: z.string().optional(),
   merged: z.boolean().optional(), merged_at: z.string().nullish(), closed_at: z.string().nullish(), auto_merge: z.unknown().optional(),
+  merged_by: z.looseObject({ login: z.string() }).nullish(),
   head: z.looseObject({ sha: z.string(), ref: z.string(), repo: z.looseObject({ full_name: z.string() }).nullish() }),
 })
 export type Pull = z.infer<typeof PullSchema> & { number: number }
@@ -80,7 +81,7 @@ function bind(ctx: SourceContext, ticketId: string, pr: Pull, own: boolean): voi
 function closePull(ctx: SourceContext, pr: Pull): void {
   if (!ctx.tickets.open().some(ticket => pullsOf(ticket, true).includes(pr.number))) return
   const at = pr.merged_at ?? pr.closed_at ?? new Date().toISOString()
-  ctx.tickets.threadClosed({ source: SOURCE, id: String(pr.number) }, pr.merged ? 'merged' : 'closed', at)
+  ctx.tickets.threadClosed({ source: SOURCE, id: String(pr.number) }, pr.merged ? 'merged' : 'closed', at, pr.merged_by?.login)
 }
 /**
  * Builds idempotent outbound notices for IM conversations when a ticket ends with its PR (selecting the last-closed PR it

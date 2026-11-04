@@ -55,13 +55,14 @@ export class Engine {
     return this.repo.atomic(() => this.tickets.bind(ticketId, thread, own))
   }
   /**
-   * A Source's fact that a Thread closed, such as its pull request's merge, at the time it happened. An open ticket that
+   * A Source's fact that a Thread closed, such as its pull request's merge, at the time it happened, and who merged it when
+   * the Source names them. An open ticket that
    * follows it ends once it is done with the Threads it follows, unless work resumed since the close has not finished, or
    * its worker took up a person's message the ticket decides after its latest report.
    */
-  threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void {
+  threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string, by?: string): void {
     // Normalize source timestamps (such as GitHub whole seconds) to canonical ISO form.
-    this.repo.atomic(() => { this.tickets.threadClosed(thread, outcome, isoTime(at)) })
+    this.repo.atomic(() => { this.tickets.threadClosed(thread, outcome, isoTime(at), by) })
   }
 
   // The clock

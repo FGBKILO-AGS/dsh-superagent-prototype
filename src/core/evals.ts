@@ -115,7 +115,11 @@ export class Evals extends EnginePart {
       this.repo.triggers.saveDisposition(trigger.id, { ...(this.repo.triggers.disposition(trigger.id) ?? { fanout: [], at }), evalId })
     }
     this.emit('eval.started', { evalId, threadKey: thread.key, triggerIds: thread.evaluating.triggerIds, strength: strongest.strength })
-    this.options.assessor.request(this.candidateOf(thread))
+    // Keep what the assessor is about to see: the Thread, Triggers and Tickets move on, and a later reading of the
+    // Decision needs the input it was actually judged on rather than the state the database is in now.
+    const candidate = this.candidateOf(thread)
+    this.repo.evalInputs.save({ evalId, at, candidate })
+    this.options.assessor.request(candidate)
   }
   /** The candidate of the Eval that holds `triggerId`, or undefined while no Eval holds it. */
   candidate(triggerId: string): Candidate | undefined {

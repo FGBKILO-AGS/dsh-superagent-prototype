@@ -36,6 +36,16 @@ export interface Candidate {
   /** Every ticket on the thread, including ended ones, for duplicate judgement. */
   tickets: Ticket[]
 }
+/**
+ * The Candidate one Eval was judged on, kept when it was handed over. A Decision names its `evalId`, so a later reading can
+ * check the judgement against the Thread, Triggers and Tickets that were in front of the assessor, which have moved on since.
+ */
+export interface EvalInput {
+  evalId: string
+  /** When the Eval started, which is when this input was handed to the assessor. */
+  at: string
+  candidate: Candidate
+}
 
 export type AssessmentOutcome =
   | { kind: 'ignore'; reason: string | Reason; audit?: Record<string, unknown> }
@@ -130,5 +140,10 @@ export interface Repositories {
     get(id: string): Decision | undefined
     save(decision: Decision): void
     byThread(key: string): Decision[]
+  }
+  /** The input each Eval was judged on, read back by Eval id. Written once per Eval, as its Candidate goes to the assessor. */
+  evalInputs: {
+    get(evalId: string): EvalInput | undefined
+    save(input: EvalInput): void
   }
 }

@@ -57,7 +57,7 @@ export interface SourceContext {
     /** Binds an open ticket to follow a Source Thread (`own` when opened by the ticket) so the Thread's close, not a ready report, ends the ticket. */
     bindThread(id: string, thread: ThreadRef, own: boolean): void
     /** Reports that a followed Thread closed at `at`; each open ticket following it ends once no `own` Thread remains open and no resumed work is still running. */
-    threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void
+    threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string, by?: string): void
   }
   triggers: { get(id: string): Trigger | undefined; /** The newest Trigger on a Thread. */ latest(thread: string): Trigger | undefined }
   notify(message: OutboundMessage): void
