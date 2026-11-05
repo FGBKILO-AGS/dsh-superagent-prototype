@@ -1,6 +1,6 @@
 /** Ticket list, ticket detail, mandate basis formatting, and executor load views. */
-import { liveTicket, threadKey, ticketStage, type AcceptMode, type AdmissionCell, type MandateBasis, type Ticket,
-  type TicketStage } from '../../core/index.ts'
+import { liveTicket, threadKey, ticketStage, type AcceptMode, type AdmissionCell, type Assignment, type MandateBasis, type Ticket,
+  type TicketStage, type Usage } from '../../core/index.ts'
 import { workerSessionId } from '../../executor/dsh.ts'
 import type { Store } from '../store.ts'
 import { channelLink, decisionView, newestFirst, page, snapshot, threadSummary, ticketLine, type Snapshot,
@@ -53,6 +53,21 @@ export function executorLoad(store: Store, running: number): ExecutorLoad {
   const queued = (ticket: Ticket) => { const stage = ticketStage(ticket); return stage.stage === 'working' && stage.action === 'queued' }
   return { running, queued: store.tickets.open().filter(queued).length }
 }
+/** Seconds between an Assignment's worker starting and ending; none while it runs or if it never started. */
+const ranSeconds = (assignment: Assignment): number | undefined => assignment.startedAt && assignment.endedAt
+  ? Math.round((Date.parse(assignment.endedAt) - Date.parse(assignment.startedAt)) / 1000) : undefined
+/**
+ * Sums the tokens every Assignment of a Ticket accounted for and the seconds its workers ran. No reading gives no cost, and a
+ * total survives only while every reading reported one, so a mixed history shows no total instead of a partial one.
+ */
+function costOf(assignments: readonly Assignment[]) {
+  const used = assignments.filter(assignment => assignment.usage)
+  if (!used.length) return undefined
+  const sum = (pick: (usage: Usage) => number) => used.reduce((total, assignment) => total + pick(assignment.usage!), 0)
+  const total = used.every(assignment => assignment.usage!.total !== undefined) ? sum(usage => usage.total!) : undefined
+  return { input: sum(usage => usage.input), output: sum(usage => usage.output), ...total === undefined ? {} : { total },
+    seconds: assignments.reduce((all, assignment) => all + (ranSeconds(assignment) ?? 0), 0) }
+}
 export function ticketDetail(host: ViewHost, id: string) {
   const { store } = host
   const ticket = store.tickets.get(id)
@@ -71,14 +86,18 @@ export function ticketDetail(host: ViewHost, id: string) {
   }
   // Pass `human = false` for bot-originated mandates so the Source kind still labels the actor as a bot if removed from the policy list.
   const human = ticket.mandate.basis.via !== 'bot'
-  return { ...ticketLine(view, ticket), mandate: { ...ticket.mandate, actor: view.actor(ticket.mandate.actor, human) },
+  const cost = costOf(ticket.assignments)
+  return { ...ticketLine(view, ticket), ...ticket.ci ? { ci: ticket.ci } : {}, ...cost ? { cost } : {}, mandate: { ...ticket.mandate, actor: view.actor(ticket.mandate.actor, human) },
     basis: basisFacts(ticket.mandate.basis, view.rule), paused: store.settings().paused,
     channels: ticket.channels.map(channel => channelLink(view, channel)),
     decision: decision ? decisionView(view, decision) : undefined,
     // Every started Assignment ran in the ticket's one worker Session. A running assignment whose worker reported a non-progress state has finished its turn unless a human response resumed the ticket.
-    assignments: ticket.assignments.map(assignment => ({ ...assignment, ...assignment.startedAt ? { ref: workerSessionId(ticket.id) } : {},
-      ...assignment.state === 'running' && assignment.report && assignment.report.state !== 'progress' && stage !== 'working'
-        ? { turnEndedAt: assignment.report.at } : {} })),
+    assignments: ticket.assignments.map(assignment => { const seconds = ranSeconds(assignment)
+      return { ...assignment, ...assignment.startedAt ? { ref: workerSessionId(ticket.id) } : {},
+        ...seconds === undefined ? {} : { seconds },
+        // A running Assignment whose worker reported a non-progress state has finished its turn unless a human response resumed the ticket.
+        ...assignment.state === 'running' && assignment.report && assignment.report.state !== 'progress' && stage !== 'working'
+          ? { turnEndedAt: assignment.report.at } : {} } }),
     inputs: ticket.inputs.slice().reverse().map(input),
     // Threads followed for context only (e.g., related issues) grant no authority and are marked with `context: true`.
     threads: view.threadsOf(id).map(thread => ({ ...threadSummary(view, thread),

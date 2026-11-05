@@ -112,6 +112,52 @@ it('states each Source by the first state that holds', () => {
     .toEqual({ feishu: 'setup', github: 'setup' })
 })
 
+it('carries a Ticket\'s CI reads to its page with what the ledger dropped, and none when it has read no CI', () => {
+  const host = views()
+  const read = { at: '2026-09-22T00:01:00Z', head: 'abc1234', revision: 1, failed: 1, running: 0, passed: 2 }
+  store.tickets.save({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    ci: { dropped: 3, items: [read] }, assignments: [], inputs: [],
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu',
+      id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] } } as never)
+  expect(ticketDetail(host, 't1')!.ci).toEqual({ dropped: 3, items: [read] })
+  store.tickets.save({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    assignments: [], inputs: [],
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu',
+      id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] } } as never)
+  expect(ticketDetail(host, 't1')).not.toHaveProperty('ci')
+})
+
+it('sums what a Ticket\'s Assignments accounted for into one cost, and drops the total when any reading lacked one', () => {
+  const host = views()
+  const ran = (id: string, usage: object, startedAt: string, endedAt: string) => ({ id, state: 'ended' as const, createdAt: at,
+    startedAt, endedAt, usage })
+  const ticket = (assignments: object[]) => ({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at,
+    updatedAt: at, mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const },
+      actor: { source: 'feishu', id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] }, assignments,
+    inputs: [] })
+  store.tickets.save(ticket([ran('a1', { input: 900, output: 100, total: 1000 }, '2026-09-22T00:00:00Z', '2026-09-22T00:01:30Z'),
+    ran('a2', { input: 1100, output: 200 }, '2026-09-22T00:02:00Z', '2026-09-22T00:02:30Z')]) as never)
+  expect(ticketDetail(host, 't1')!.cost).toEqual({ input: 2000, output: 300, seconds: 120 })
+  store.tickets.save(ticket([ran('a1', { input: 900, output: 100, total: 1000 }, '2026-09-22T00:00:00Z', '2026-09-22T00:01:30Z')]) as never)
+  expect(ticketDetail(host, 't1')!.cost).toEqual({ input: 900, output: 100, total: 1000, seconds: 90 })
+  store.tickets.save(ticket([{ id: 'a1', state: 'pending' as const, createdAt: at }]) as never)
+  expect(ticketDetail(host, 't1')).not.toHaveProperty('cost')
+})
+
+it('reports the tokens an ended Assignment accounted for and the seconds its worker ran, with neither on one that never ran', () => {
+  const host = views()
+  const ran = { id: 'a1', state: 'ended' as const, createdAt: at, startedAt: '2026-09-22T00:00:00Z', endedAt: '2026-09-22T00:01:30Z',
+    usage: { input: 900, output: 100, total: 1000 } }
+  const queued = { id: 'a2', state: 'pending' as const, createdAt: '2026-09-22T00:02:00Z' }
+  store.tickets.save({ id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: at, updatedAt: at,
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu',
+      id: 'ou_alice' }, scope: '' }, origin: { triggerId: 'e1', triggerIds: ['e1'] }, assignments: [ran, queued], inputs: [] })
+  const [first, second] = ticketDetail(host, 't1')!.assignments
+  expect(first).toMatchObject({ usage: ran.usage, seconds: 90 })
+  expect(second).not.toHaveProperty('seconds')
+  expect(second).not.toHaveProperty('usage')
+})
+
 it('follows the Ticket\'s stage: a blocked Ticket a person answered since is working, with no retry, note or turn end', () => {
   const host = views()
   const blocked = { state: 'blocked' as const, summary: 'Needs the design file', at: '2026-09-22T00:01:00Z' }

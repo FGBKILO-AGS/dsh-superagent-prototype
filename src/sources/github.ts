@@ -4,7 +4,7 @@ import { key, type Thread } from '../core/index.ts'
 import { sameName } from '../infra/text.ts'
 import { GithubAccountsSchema } from '../deployment.ts'
 import { CliError, validItems, type Tally } from '../infra/commands.ts'
-import { ciCounts, ciFact, ciFailures, ciSummary, githubThreadContext, pullChecks } from './github-read.ts'
+import { ciCounts, ciFact, ciFailures, ciSummary, ciTally, githubThreadContext, pullChecks } from './github-read.ts'
 import { branchCiTrigger, ciTrigger, commentTrigger, CommentSchema, githubAddress, issueTrigger, IssueSchema, pullTrigger, SOURCE }
   from './github-trigger.ts'
 import { githubLink, sendGithub } from './github-channel.ts'
@@ -420,6 +420,10 @@ async function pollChecks(ctx: SourceContext, round: Round, number: number, pr: 
   const revision = previous ? previous.revision + 1 : 0
   if (previous) await ctx.receive(ciTrigger(pr, revision, ciSummary(snapshot, `PR #${number}`, `github/pulls/${number}/checks`)))
   ctx.state.set(KV.github.ci(number), { fingerprint, revision })
+  // Every open Ticket working this PR keeps the read: what its work landed on, and how that changed until the PR ended.
+  const tally = ciTally(snapshot)
+  for (const ticket of ctx.tickets.open().filter(item => pullsOf(item, true).includes(number)))
+    ctx.tickets.recordCi(ticket.id, { at: round.started, head: pr.head.sha, revision, ...tally })
   ctx.threads.describe(`github:${number}`, { facts: { ci: ciFact(ciCounts(snapshot)) } })
 }
 function nameThread(ctx: SourceContext, number: number, title: string): void {

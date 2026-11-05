@@ -46,7 +46,11 @@ function Details({ icon, title, open = false, children }: { icon: IconName; titl
 function Assignments({ ticket }: { ticket: TicketPageView }) {
   const { t } = usePanel()
   const report = (state: string) => t('assignmentReportShort', { state: valueLabel(t, 'report', state) })
-  return <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
+  const cost = ticket.cost
+  const parts = cost ? [t('costIn', { value: String(cost.input) }), t('costOut', { value: String(cost.output) }),
+    ...(cost.total === undefined ? [] : [t('costTotal', { value: String(cost.total) })]), t('costSeconds', { value: String(cost.seconds) })] : []
+  return <>
+    <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
     <Dot state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'} label={valueLabel(t, 'assignment', item.state)} />
     <div className="dt-row-main">
       <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
@@ -64,6 +68,9 @@ function Assignments({ ticket }: { ticket: TicketPageView }) {
     {item.ref && item.ref !== ticket.sessionId && <div className="dt-row-actions"><SessionButton variant="outline"
       sessionId={item.ref} /></div>}
   </li>)}</ul>
+    {/* What the workers of this Ticket accounted for in total; a reading omits attempts that committed no message. */}
+    {cost && <div className="dt-row-meta"><span>{t('term.cost')}</span><span>{parts.join(' · ')}</span></div>}
+  </>
 }
 function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: string }) {
   const { t, navigate } = usePanel()
@@ -170,8 +177,21 @@ export function TicketPage({ id }: { id: string }) {
         context={thread.context} />)}</ul>
     </Section>}
     <div className="dt-details">
-      {/* A single Assignment adds nothing beyond the status line; list Assignments only once work has been resumed or handed over. */}
-      {data.assignments.length > 1 && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
+      {/* Newest read first; the first row is what CI says now, and `dropped` says the ledger is not the whole history. */}
+      {data.ci && <Details icon="history" title={`${t('term.ciReads')} · ${data.ci.items.length}`} open>
+        <ul className="dt-plain-list">{data.ci.items.slice().reverse().map((item, index) => <li key={`${item.revision}:${item.head}`}>
+          <div className="dt-row-meta">
+            <span className="dt-mono">{item.head.slice(0, 7)}</span>
+            <span>{[t('ciFailed', { value: String(item.failed) }), t('ciRunning', { value: String(item.running) }),
+              t('ciPassed', { value: String(item.passed) })].join(' · ')}</span>
+            <When at={item.at} />
+            {index === 0 && <Tag tone={item.failed ? 'danger' : 'neutral'}>{t('ciCurrent')}</Tag>}
+          </div>
+        </li>)}</ul>
+        {data.ci.dropped > 0 && <Hint>{t('ciDropped', { value: String(data.ci.dropped) })}</Hint>}
+      </Details>}
+      {/* List Assignments once work has been resumed or handed over, or once any of them accounted for token use. */}
+      {(data.assignments.length > 1 || data.cost) && <Details icon="queue" title={`${t('term.assignment')} · ${data.assignments.length}`} open><Assignments
         ticket={data} /></Details>}
       {data.environment.length > 0 && <Details icon="settings" title={t('term.environment')}>
         <table className="dt-table"><tbody>{data.environment.map(variable => <tr key={variable.key} title={localized(t,
@@ -199,7 +219,8 @@ export function TicketPage({ id }: { id: string }) {
     {data.actions.stop && <div className="dt-danger-zone">
       <span className="dt-hint">{t('stopHint')}</span>
       <ConfirmButton variant="outline" label={t('stop')} title={t('stopConfirmTitle')} message={t('stopConfirm', { title: data.title })}
-        onConfirm={() => after(call('POST tickets/:id/stop', { id }))} />
+        input={{ label: t('stopReason') }}
+        onConfirm={reason => after(call('POST tickets/:id/stop', { id, body: { reason } }))} />
     </div>}
   </>
 }

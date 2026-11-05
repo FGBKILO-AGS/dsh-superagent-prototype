@@ -20,6 +20,11 @@ export function ciCounts(snapshot: CiSnapshot): { failed: number; running: numbe
     running: snapshot.checks.filter(check => check.status !== 'completed').length + statuses.filter(status => status.state === 'pending').length,
   }
 }
+/** Sums one CI read into the three counts a Ticket ledger keeps: failed, still running, and everything else as passed. */
+export function ciTally(snapshot: CiSnapshot): { failed: number; running: number; passed: number } {
+  const counts = ciCounts(snapshot)
+  return { ...counts, passed: snapshot.checks.length + (snapshot.statuses ?? []).length - counts.failed - counts.running }
+}
 export function ciSummary(snapshot: CiSnapshot, where: string, read: string): string {
   const checks = snapshot.checks.map(check => ({ name: check.name, failed: FAILING.has(check.conclusion ?? ''), running: check.status !== 'completed' }))
   const statuses = (snapshot.statuses ?? []).map(status => ({ name: status.context, failed: FAILING.has(status.state), running: status.state === 'pending' }))

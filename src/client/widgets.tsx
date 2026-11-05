@@ -1,5 +1,5 @@
 /** Context-aware shared UI widgets: page/section headers, timestamps, Markdown rendering, and confirmation actions. */
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useId, useState, type ReactNode } from 'react'
 import type { SetupProblem } from '../setup.ts'
 import { Button, Icon, InfoTip, Modal, StateDot, type DotState, type IconName } from './controls.tsx'
 import { inlines, linkify, markdownBlocks, type Inline } from './markdown.ts'
@@ -72,20 +72,32 @@ export function ClampText({ text }: { text: string }) {
   </>
 }
 
-export function ConfirmButton({ label, title, message, onConfirm, variant = 'ghost', icon }: {
-  label: string; title: string; message: string; onConfirm: () => Promise<unknown>; variant?: 'ghost' | 'outline'; icon?: IconName
+export function ConfirmButton({ label, title, message, onConfirm, variant = 'ghost', icon, input }: {
+  label: string; title: string; message: string; onConfirm: (value?: string) => Promise<unknown>; variant?: 'ghost' | 'outline'; icon?: IconName
+  /** Adds a text field to the dialog and passes what was typed, trimmed, to `onConfirm`; an empty field passes nothing. */
+  input?: { label: string }
 }) {
   const { t } = usePanel()
+  const id = useId()
   const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
   const confirm = useAction(onConfirm)
+  const submit = () => confirm.run(input ? value.trim() || undefined : undefined).then(done => { if (done) setOpen(false) })
   return <>
-    <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />} onClick={() => setOpen(true)}>{label}</Button>
+    <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />}
+      onClick={() => { setValue(''); setOpen(true) }}>{label}</Button>
     <Modal open={open} onClose={() => setOpen(false)} title={title} closeLabel={t('close')} description={message}
       footer={<>
         <Button variant="ghost" onClick={() => setOpen(false)}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={confirm.busy}
-          onClick={() => { void confirm.run().then(done => { if (done) setOpen(false) }) }}>{t('confirm')}</Button>
-      </>} />
+        <Button variant="primary" disabled={confirm.busy} onClick={() => { void submit() }}>{t('confirm')}</Button>
+      </>}>
+      {/* Enter confirms the same action the footer button runs, so a typed answer needs no second reach for the mouse. */}
+      {input && <div className="dt-field">
+        <span className="dt-field-head"><label htmlFor={id}>{input.label}</label></span>
+        <span className="dt-input"><input id={id} value={value} onChange={event => setValue(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') void submit() }} /></span>
+      </div>}
+    </Modal>
   </>
 }
 export function SessionButton({ sessionId, label,

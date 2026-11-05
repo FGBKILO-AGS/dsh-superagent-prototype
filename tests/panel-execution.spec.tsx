@@ -50,6 +50,61 @@ it('stops an open Ticket from its page after confirmation', async () => {
   expect(server.requests.some(request => request.path === 'tickets/t1/stop' && request.method === 'POST')).toBe(true)
 })
 
+it('sends the reason a person types into the stop dialog with the stop request', async () => {
+  await mount()
+  await click('修复回归')
+  await click(zh.stop)
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(zh.stopReason)
+  await type(field<HTMLInputElement>(zh.stopReason), '人已接管')
+  await click(zh.confirm)
+  expect(server.requests.find(request => request.path === 'tickets/t1/stop')).toMatchObject({ method: 'POST', body: { reason: '人已接管' } })
+})
+
+it('lists the CI reads a Ticket kept, marks the latest as current, and says what the ledger dropped, in either language', async () => {
+  const t1 = server.ticketDetails.t1!
+  const read = (at: string, head: string, revision: number, counts: { failed: number; running: number; passed: number }) =>
+    ({ at, head, revision, ...counts })
+  server.ticketDetails.t1 = { ...t1, ci: { dropped: 2, items: [
+    read('2026-09-22T00:00:00Z', 'abc1234', 0, { failed: 1, running: 2, passed: 3 }),
+    read('2026-09-22T00:05:00Z', 'def5678', 1, { failed: 0, running: 0, passed: 6 })] } }
+  await mount()
+  await click('修复回归')
+  expect(text()).toContain(zh['term.ciReads'])
+  expect(text()).toContain(zh.ciFailed.replace('{value}', '1'))
+  expect(text()).toContain(zh.ciPassed.replace('{value}', '6'))
+  expect(text()).toContain(zh.ciDropped.replace('{value}', '2'))
+  expect(text()).toContain(zh.ciCurrent)
+  await remount(en)
+  expect(text()).toContain(en['term.ciReads'])
+  expect(text()).toContain(en.ciRunning.replace('{value}', '2'))
+  expect(text()).toContain(en.ciCurrent)
+})
+
+it('confirms a stop from the keyboard: typing a reason and pressing Enter sends it without clicking Confirm', async () => {
+  await mount()
+  await click('修复回归')
+  await click(zh.stop)
+  const input = field<HTMLInputElement>(zh.stopReason)
+  await type(input, '人已接管')
+  expect(server.requests.some(request => request.path === 'tickets/t1/stop')).toBe(false)
+  await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  expect(server.requests.find(request => request.path === 'tickets/t1/stop')?.body).toEqual({ reason: '人已接管' })
+})
+
+it('shows what a Ticket accounted for in tokens and how long its workers ran, in either language', async () => {
+  const t1 = server.ticketDetails.t1!
+  server.ticketDetails.t1 = { ...t1, cost: { input: 2000, output: 300, seconds: 120 } }
+  await mount()
+  await click('修复回归')
+  expect(text()).toContain(zh['term.cost'])
+  expect(text()).toContain(zh.costIn.replace('{value}', '2000'))
+  expect(text()).toContain(zh.costSeconds.replace('{value}', '120'))
+  expect(text()).not.toContain(zh.costTotal.replace('{value}', ''))
+  await remount(en)
+  expect(text()).toContain(en['term.cost'])
+  expect(text()).toContain(en.costOut.replace('{value}', '300'))
+})
+
 it('shows a Ticket with its stage, its Mandate details with the Trigger and Decision behind it, its Threads, and the rest behind disclosures', async () => {
   await mount()
   await click(all('.dt-open').find(button => button.textContent === '修复回归')!)

@@ -7,7 +7,7 @@ import { apply as applyFeishu, pollThreads as pollFeishuThreads } from '../src/s
 import { runFeishu } from '../src/sources/feishu-loops.ts'
 import { commentTrigger, githubAddress, githubChannel, issueTrigger, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
 import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
-import { ciCounts, ciFact, ciSummary } from '../src/sources/github-read.ts'
+import { ciCounts, ciFact, ciSummary, ciTally } from '../src/sources/github-read.ts'
 import { apply as applyGithub, githubKind, pollFailure, pollRound } from '../src/sources/github.ts'
 import { pollThreads as pollGithubThreads } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
@@ -365,6 +365,11 @@ describe('github source', () => {
     expect(ciFact({ failed: 0, running: 1 })).toEqual({ label: { zh: 'CI 进行中', en: 'CI running' }, value: '1' })
     expect(ciFact({ failed: 0, running: 0 })).toEqual({ label: 'CI', value: { zh: '通过', en: 'passed' } })
   })
+  it('tallys one CI read into the three counts a Ticket ledger keeps, with everything not failed or running as passed', () => {
+    const read = { head: 'abc', checks: [{ name: 'e2e', status: 'completed', conclusion: 'failure' }, { name: 'lint', status: 'in_progress', conclusion: null }, { name: 'docs', status: 'completed', conclusion: 'skipped' }], statuses: [{ context: 'deploy', state: 'error' }, { context: 'preview', state: 'pending' }] }
+    expect(ciTally(read)).toEqual({ failed: 2, running: 2, passed: 1 })
+    expect(ciTally({ head: 'abc', checks: [], statuses: [] })).toEqual({ failed: 0, running: 0, passed: 0 })
+  })
   it('starts a review comment\'s text with its file, line and diff lines, and keeps them and the comment it answers', () => {
     const comment: GithubComment = { id: 5, body: 'Use the theme token', user: { login: 'carol', type: 'User' }, path: 'src/render.ts', line: 43,
       diff_hunk: '@@ -40,6 +40,8 @@\n   const title = view.title\n   const margin = 12\n+  const padding = 8', in_reply_to_id: 4,
@@ -572,6 +577,44 @@ describe('github source', () => {
     expect(h.store.tickets.get('t9')).toMatchObject({ ended: { outcome: 'merged' } })
     // Who merged it is kept with the close of the Thread it followed, so the ending can be audited afterwards.
     expect(h.store.tickets.get('t9')!.follows?.find(item => item.thread === 'github:9')?.closed).toMatchObject({ by: 'reviewer-one' })
+    h.store.close()
+  })
+  it('keeps each changed read of a bound pull request\'s CI on the Ticket that works it, oldest first', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('t9'), ...pulled(9) })
+    h.store.threads.save({ key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', lastAt: new Date().toISOString(),
+      subscriptions: ['t9'], correlated: [], pending: [], meta: { number: 9, isPr: true, title: 'Fix' } })
+    const pr = { number: 9, title: 'Fix', state: 'open', html_url: 'https://github.com/acme/widgets/pull/9', user: { login: 'agent-bot' },
+      head: { sha: 'abc', ref: 'agent/nine', repo: { full_name: 'acme/widgets' } } }
+    const routes: Record<string, unknown> = { notifications: [notification(9, 'pulls')], 'pulls/9': pr,
+      'commits/abc/check-runs': { check_runs: [{ name: 'test', status: 'in_progress', conclusion: null }] } }
+    github(h, routes)
+    await pollRound(h)
+    await pollRound(h)
+    routes['commits/abc/check-runs'] = { check_runs: [{ name: 'test', status: 'completed', conclusion: 'success' }] }
+    await pollRound(h)
+    expect(h.store.tickets.get('t9')!.ci).toEqual({ dropped: 0, items: [
+      { at: expect.any(String), head: 'abc', revision: 0, failed: 0, running: 1, passed: 0 },
+      { at: expect.any(String), head: 'abc', revision: 1, failed: 0, running: 0, passed: 1 }] })
+    h.store.close()
+  })
+  it('keeps only the latest forty CI reads on a Ticket after a long run of changes', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('t9'), ...pulled(9) })
+    h.store.threads.save({ key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', lastAt: new Date().toISOString(),
+      subscriptions: ['t9'], correlated: [], pending: [], meta: { number: 9, isPr: true, title: 'Fix' } })
+    const pr = { number: 9, title: 'Fix', state: 'open', html_url: 'https://github.com/acme/widgets/pull/9', user: { login: 'agent-bot' },
+      head: { sha: 'abc', ref: 'agent/nine', repo: { full_name: 'acme/widgets' } } }
+    const routes: Record<string, unknown> = { notifications: [notification(9, 'pulls')], 'pulls/9': pr }
+    github(h, routes)
+    for (let round = 0; round < 45; round++) {
+      routes['commits/abc/check-runs'] = { check_runs: [{ name: 'test', status: 'completed', conclusion: round % 2 ? 'success' : 'failure' },
+        ...Array.from({ length: round % 3 }, (_unused, job) => ({ name: `job${job}`, status: 'in_progress', conclusion: null }))] }
+      await pollRound(h)
+    }
+    const ledger = h.store.tickets.get('t9')!.ci!
+    expect([ledger.items.length, ledger.dropped]).toEqual([40, 5])
+    expect(ledger.items.map(item => item.revision)).toEqual(Array.from({ length: 40 }, (_unused, i) => i + 5))
     h.store.close()
   })
   it('reads each notified Issue alone and reads a failed one again next round, from where it was', async () => {
